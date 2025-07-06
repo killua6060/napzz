@@ -8,7 +8,7 @@ struct InsightsView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     // Header with date
-                    HeaderSection(selectedDate: viewModel.selectedDate)
+                    InsightsHeaderSection(selectedDate: viewModel.selectedDate)
                     
                     if let sleepData = viewModel.currentSleepData {
                         VStack(spacing: 20) {
@@ -47,7 +47,7 @@ struct InsightsView: View {
     }
 }
 
-struct HeaderSection: View {
+struct InsightsHeaderSection: View {
     let selectedDate: Date
     
     var body: some View {
