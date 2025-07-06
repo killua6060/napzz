@@ -10,6 +10,15 @@ struct InsightsView: View {
                     // Header with date
                     InsightsHeaderSection(selectedDate: viewModel.selectedDate)
                     
+                    // Day Selector
+                    DaySelectorSection(
+                        weeklyData: viewModel.weeklyData,
+                        selectedDate: viewModel.selectedDate,
+                        onDateSelected: { date in
+                            viewModel.selectDate(date)
+                        }
+                    )
+                    
                     if let sleepData = viewModel.currentSleepData {
                         VStack(spacing: 20) {
                             // Sleep Quality Section
@@ -26,8 +35,8 @@ struct InsightsView: View {
                             // Sleep Goal Progress
                             SleepGoalSection(sleepData: sleepData, viewModel: viewModel)
                             
-                            // Sleep Phases Section
-                            SleepPhasesSection(sleepData: sleepData, viewModel: viewModel)
+                            // Sleep Phases Section with Graph
+                            SleepPhasesGraphSection(sleepData: sleepData, viewModel: viewModel)
                             
                             // Detected Sounds Section
                             if !sleepData.detectedSounds.isEmpty {
@@ -69,12 +78,87 @@ struct InsightsHeaderSection: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
-        .padding(.bottom, 30)
+        .padding(.bottom, 20)
     }
     
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "E MMM d"
+        return formatter.string(from: date)
+    }
+}
+
+struct DaySelectorSection: View {
+    let weeklyData: [SleepData]
+    let selectedDate: Date
+    let onDateSelected: (Date) -> Void
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 15) {
+                ForEach(weeklyData, id: \.id) { sleepData in
+                    DayButton(
+                        sleepData: sleepData,
+                        isSelected: Calendar.current.isDate(sleepData.date, inSameDayAs: selectedDate),
+                        onTap: {
+                            onDateSelected(sleepData.date)
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 25)
+    }
+}
+
+struct DayButton: View {
+    let sleepData: SleepData
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                Text(dayNumber(sleepData.date))
+                    .font(.title2)
+                    .fontWeight(isSelected ? .bold : .medium)
+                    .foregroundColor(isSelected ? .white : .gray)
+                
+                Text(dayName(sleepData.date))
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .defaultAccent : .gray)
+                
+                // Sleep quality indicator
+                Circle()
+                    .fill(Color(sleepData.sleepQuality.color))
+                    .frame(width: 8, height: 8)
+                    .opacity(isSelected ? 1.0 : 0.6)
+            }
+            .frame(width: 50)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.defaultCardBackground : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isSelected ? Color.defaultAccent : Color.clear, lineWidth: 1)
+                    )
+            )
+        }
+        .scaleEffect(isSelected ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+    }
+    
+    private func dayNumber(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+    
+    private func dayName(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
         return formatter.string(from: date)
     }
 }
@@ -239,7 +323,7 @@ struct SleepGoalSection: View {
     }
 }
 
-struct SleepPhasesSection: View {
+struct SleepPhasesGraphSection: View {
     let sleepData: SleepData
     let viewModel: InsightsViewModel
     
@@ -259,8 +343,8 @@ struct SleepPhasesSection: View {
                 }
             }
             
-            // Sleep phases visualization
-            SleepPhasesChart(sleepData: sleepData, viewModel: viewModel)
+            // Sleep phases visualization with graph
+            SleepPhasesGraph(sleepData: sleepData, viewModel: viewModel)
             
             // Phase breakdown
             SleepPhaseBreakdown(sleepData: sleepData, viewModel: viewModel)
@@ -272,7 +356,7 @@ struct SleepPhasesSection: View {
     }
 }
 
-struct SleepPhasesChart: View {
+struct SleepPhasesGraph: View {
     let sleepData: SleepData
     let viewModel: InsightsViewModel
     
@@ -281,27 +365,61 @@ struct SleepPhasesChart: View {
             // Phase labels
             HStack {
                 ForEach(SleepPhaseType.allCases, id: \.self) { phase in
-                    Text(phase.displayName)
-                        .font(.caption)
-                        .foregroundColor(Color(phase.color))
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color(phase.color))
+                            .frame(width: 8, height: 8)
+                        Text(phase.displayName)
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
             
-            // Timeline
-            HStack(spacing: 0) {
-                ForEach(sleepData.sleepPhases) { phase in
-                    Rectangle()
-                        .fill(Color(phase.type.color))
-                        .frame(height: 8)
-                        .frame(maxWidth: .infinity)
+            // Main sleep graph
+            GeometryReader { geometry in
+                let totalDuration = sleepData.totalSleepTime
+                let width = geometry.size.width
+                
+                HStack(spacing: 0) {
+                    ForEach(sleepData.sleepPhases) { phase in
+                        let phaseWidth = width * (phase.duration / totalDuration)
+                        
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(phase.type.color),
+                                        Color(phase.type.color).opacity(0.7)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: phaseWidth)
+                    }
                 }
+                .frame(height: 60)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
             }
-            .cornerRadius(4)
+            .frame(height: 60)
             
             // Time markers
             HStack {
                 Text(viewModel.formatTime(sleepData.bedtime))
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                // Middle time marker
+                let middleTime = sleepData.bedtime.addingTimeInterval(sleepData.totalSleepTime / 2)
+                Text(viewModel.formatTime(middleTime))
                     .font(.caption2)
                     .foregroundColor(.gray)
                 
